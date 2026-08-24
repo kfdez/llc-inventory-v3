@@ -2,6 +2,8 @@ const BOT_CONFIG_SHEET = "Bot Config";
 const CAPTURE_SESSIONS_SHEET = "CaptureSessions";
 const AUDIT_SESSIONS_SHEET = "AuditSessions";
 const AUDIT_SCANS_SHEET = "AuditScans";
+const PURCHASE_LOTS_SHEET = "PurchaseLots";
+const PURCHASE_LOT_ITEMS_SHEET = "PurchaseLotItems";
 const SALES_LOG_TEMPLATE_SHEET = "Sales Log - Template";
 const SINGLES_INVENTORY_SHEET = "Singles Inventory";
 const SLABS_INVENTORY_SHEET = "Slabs Inventory";
@@ -68,6 +70,57 @@ const AUDIT_SCAN_HEADERS = [
   "manual_review",
   "inventory_match",
   "notes"
+];
+
+const PURCHASE_LOT_HEADERS = [
+  "purchase_lot_id",
+  "purchase_name",
+  "purchase_date",
+  "source",
+  "temporary_portfolio",
+  "target_owner",
+  "status",
+  "cost_mode",
+  "total_rows",
+  "total_quantity",
+  "unique_card_count",
+  "cost_layer_count",
+  "duplicate_card_count",
+  "total_market_value",
+  "total_cost_paid",
+  "effective_buy_percentage",
+  "source_file_path",
+  "notes",
+  "created_at"
+];
+
+const PURCHASE_LOT_ITEM_HEADERS = [
+  "purchase_lot_item_id",
+  "purchase_lot_id",
+  "card_key",
+  "generated_id",
+  "source_portfolio_name",
+  "source_category",
+  "set",
+  "product_name",
+  "card_number",
+  "rarity",
+  "variance",
+  "grade",
+  "card_condition",
+  "quantity",
+  "market_price_at_purchase",
+  "unit_cost_paid",
+  "total_cost_paid",
+  "cost_method",
+  "source_row_numbers",
+  "collectr_date_added",
+  "collectr_notes",
+  "price_override",
+  "watchlist",
+  "assigned_owner",
+  "assignment_status",
+  "created_at"
 ];
 
 function CARD_ID(portfolioName, categoryCode, setName, productName, cardNumber, rarity, variance, grade, cardCondition) {
@@ -503,6 +556,8 @@ function setupBotSheets() {
   getCaptureSessionsSheet_();
   getAuditSessionsSheet_();
   getAuditScansSheet_();
+  getPurchaseLotsSheet_();
+  getPurchaseLotItemsSheet_();
   getSalesLogTemplateSheet_();
   SpreadsheetApp.getUi().alert("Bot sheets are ready.");
 }
@@ -608,6 +663,10 @@ function doPost(e) {
       return jsonResponse_({ ok: true, summary: getAuditSummary_(payload) });
     }
 
+    if (path === "purchase/commit") {
+      return jsonResponse_({ ok: true, result: commitPurchaseLot_(payload) });
+    }
+
     return jsonResponse_({ ok: false, error: "Unknown POST path: " + path });
   } catch (error) {
     return jsonResponse_({ ok: false, error: error.message });
@@ -667,6 +726,18 @@ function getAuditSessionsSheet_() {
 function getAuditScansSheet_() {
   const sheet = getOrCreateSheet_(AUDIT_SCANS_SHEET);
   ensureHeaders_(sheet, AUDIT_SCAN_HEADERS);
+  return sheet;
+}
+
+function getPurchaseLotsSheet_() {
+  const sheet = getOrCreateSheet_(PURCHASE_LOTS_SHEET);
+  ensureHeaders_(sheet, PURCHASE_LOT_HEADERS);
+  return sheet;
+}
+
+function getPurchaseLotItemsSheet_() {
+  const sheet = getOrCreateSheet_(PURCHASE_LOT_ITEMS_SHEET);
+  ensureHeaders_(sheet, PURCHASE_LOT_ITEM_HEADERS);
   return sheet;
 }
 
@@ -2001,6 +2072,168 @@ function normalizeScanRecord_(payload, scan) {
     "__message_id": String(payload.messageId || "").trim(),
     "__source_timestamp_ms": timestampMs
   };
+}
+
+function normalizePurchaseText_(value) {
+  return String(value || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizePurchaseDedupeText_(value) {
+  return normalizePurchaseText_(value).toLowerCase();
+}
+
+function parsePurchaseNumber_(value, fallback) {
+  const parsed = Number(String(value === undefined || value === null ? "" : value).replace(/[$,%\s,]/g, ""));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function roundPurchaseCurrency_(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000;
+}
+
+function findExistingPurchaseLot_(sheet, purchaseName, purchaseDate, temporaryPortfolio) {
+  const values = sheet.getDataRange().getValues();
+  if (values.length < 2) {
+    return null;
+  }
+
+  const headers = values[0];
+  const nameIndex = headers.indexOf("purchase_name");
+  const dateIndex = headers.indexOf("purchase_date");
+  const tempIndex = headers.indexOf("temporary_portfolio");
+  const idIndex = headers.indexOf("purchase_lot_id");
+  const targetName = normalizePurchaseDedupeText_(purchaseName);
+  const targetDate = normalizePurchaseDedupeText_(purchaseDate);
+  const targetTemp = normalizePurchaseDedupeText_(temporaryPortfolio);
+
+  for (let rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
+    const row = values[rowIndex];
+    if (
+      normalizePurchaseDedupeText_(row[nameIndex]) === targetName &&
+      normalizePurchaseDedupeText_(row[dateIndex]) === targetDate &&
+      normalizePurchaseDedupeText_(row[tempIndex]) === targetTemp
+    ) {
+      return {
+        rowNumber: rowIndex + 1,
+        purchaseLotId: row[idIndex]
+      };
+    }
+  }
+
+  return null;
+}
+
+function commitPurchaseLot_(payload) {
+  const purchaseName = normalizePurchaseText_(payload.purchaseName);
+  const purchaseDate = normalizePurchaseText_(payload.purchaseDate);
+  const temporaryPortfolio = normalizePurchaseText_(payload.temporaryPortfolio);
+  const items = Array.isArray(payload.items) ? payload.items : [];
+
+  if (!purchaseName) {
+    throw new Error("Purchase name is required.");
+  }
+  if (!purchaseDate) {
+    throw new Error("Purchase date is required.");
+  }
+  if (!temporaryPortfolio) {
+    throw new Error("Temporary portfolio is required.");
+  }
+  if (!items.length) {
+    throw new Error("Purchase lot has no items.");
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+
+  try {
+    const lotsSheet = getPurchaseLotsSheet_();
+    const existing = findExistingPurchaseLot_(lotsSheet, purchaseName, purchaseDate, temporaryPortfolio);
+    if (existing) {
+      throw new Error("Purchase lot already exists: " + existing.purchaseLotId);
+    }
+
+    const itemSheet = getPurchaseLotItemsSheet_();
+    const now = new Date();
+    const purchaseLotId = "PLOT-" + Utilities.getUuid();
+    const targetOwner = normalizePurchaseText_(payload.targetOwner);
+    const totalMarketValue = parsePurchaseNumber_(payload.totalMarketValue, 0);
+    const totalCostPaid = parsePurchaseNumber_(payload.totalCostPaid, 0);
+    const effectiveBuyPercentage = parsePurchaseNumber_(payload.effectiveBuyPercentage, 0);
+
+    lotsSheet.appendRow([
+      purchaseLotId,
+      purchaseName,
+      purchaseDate,
+      normalizePurchaseText_(payload.source),
+      temporaryPortfolio,
+      targetOwner,
+      targetOwner ? "assigned_pending_reconcile" : "temporary",
+      normalizePurchaseText_(payload.costMode || "cost_paid"),
+      parsePurchaseNumber_(payload.totalRows, items.length),
+      parsePurchaseNumber_(payload.totalQuantity, 0),
+      parsePurchaseNumber_(payload.uniqueCardCount, 0),
+      parsePurchaseNumber_(payload.costLayerCount, items.length),
+      parsePurchaseNumber_(payload.duplicateCardCount, 0),
+      roundPurchaseCurrency_(totalMarketValue),
+      roundPurchaseCurrency_(totalCostPaid),
+      effectiveBuyPercentage,
+      normalizePurchaseText_(payload.sourceFilePath),
+      normalizePurchaseText_(payload.notes),
+      now
+    ]);
+
+    const itemRows = items.map(function (item) {
+      const quantity = parsePurchaseNumber_(item.quantity, 1);
+      const unitCostPaid = parsePurchaseNumber_(item.unitCostPaid, 0);
+      return [
+        "PITEM-" + Utilities.getUuid(),
+        purchaseLotId,
+        normalizePurchaseText_(item.cardKey),
+        "",
+        normalizePurchaseText_(item.sourcePortfolioName || item.portfolioName),
+        normalizePurchaseText_(item.sourceCategory || item.category),
+        normalizePurchaseText_(item.setName),
+        normalizePurchaseText_(item.productName),
+        normalizePurchaseText_(item.cardNumber),
+        normalizePurchaseText_(item.rarity),
+        normalizePurchaseText_(item.variance),
+        normalizePurchaseText_(item.grade),
+        normalizePurchaseText_(item.cardCondition),
+        quantity,
+        roundPurchaseCurrency_(parsePurchaseNumber_(item.marketPrice, 0)),
+        roundPurchaseCurrency_(unitCostPaid),
+        roundPurchaseCurrency_(quantity * unitCostPaid),
+        normalizePurchaseText_(item.costMethod),
+        normalizePurchaseText_(item.sourceRowNumbers || item.sourceRowNumber),
+        normalizePurchaseText_(item.collectrDateAdded || item.dateAdded),
+        normalizePurchaseText_(item.collectrNotes),
+        normalizePurchaseText_(item.priceOverride),
+        normalizePurchaseText_(item.watchlist),
+        targetOwner,
+        targetOwner ? "assigned_pending_reconcile" : "temporary",
+        now
+      ];
+    });
+
+    if (itemRows.length) {
+      itemSheet.getRange(itemSheet.getLastRow() + 1, 1, itemRows.length, PURCHASE_LOT_ITEM_HEADERS.length).setValues(itemRows);
+    }
+
+    SpreadsheetApp.flush();
+    return {
+      purchaseLotId: purchaseLotId,
+      itemCount: itemRows.length,
+      totalQuantity: parsePurchaseNumber_(payload.totalQuantity, 0),
+      totalMarketValue: roundPurchaseCurrency_(totalMarketValue),
+      totalCostPaid: roundPurchaseCurrency_(totalCostPaid),
+      effectiveBuyPercentage: effectiveBuyPercentage
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function clearSalesLogDataArea_(sheet) {
