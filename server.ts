@@ -49,6 +49,8 @@ async function startServer() {
         APPS_SCRIPT_API_BASE_URL: process.env.APPS_SCRIPT_API_BASE_URL || "",
         APP_PIN: process.env.APP_PIN || "",
         COLLECTR_ACCOUNT_ID: process.env.COLLECTR_ACCOUNT_ID || "",
+        COLLECTR_AUTH_TOKEN: process.env.COLLECTR_AUTH_TOKEN || "",
+        COLLECTR_API_BASE_URL: process.env.COLLECTR_API_BASE_URL || "",
         COLLECTR_CURRENCY: process.env.COLLECTR_CURRENCY || "CAD",
         COLLECTR_PROXY_BASE_URL: process.env.COLLECTR_PROXY_BASE_URL || "",
         COLLECTR_PROXY_SECRET: process.env.COLLECTR_PROXY_SECRET || "",
