@@ -35,7 +35,7 @@ class DiscordThreadAdapter {
     return parent.threads.create({
       name: dateKey + " - " + cleanName,
       autoArchiveDuration: 10080,
-      reason: "Inventory capture v2 requested by " + String(requestedBy || "unknown")
+      reason: "Inventory capture v3 requested by " + String(requestedBy || "unknown")
     });
   }
 }

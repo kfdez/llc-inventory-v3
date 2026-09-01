@@ -27,7 +27,7 @@ async function main() {
     discordEnabled: config.discordEnabled,
     appsScriptDryRun: config.appsScriptDryRun,
     sqlitePath: config.sqlitePath
-  }, "Starting LLC Inventory v2.");
+  }, "Starting LLC Inventory v3.");
 
   await startDiscordBot({ config, logger, captureService });
   const collectrProxyServer = startCollectrProxyServer({ config, logger, store });

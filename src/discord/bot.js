@@ -113,7 +113,7 @@ async function startDiscordBot({ config, logger, captureService }) {
   });
 
   client.on("clientReady", async () => {
-    logger.info({ guildId: config.discord.guildId }, "Discord v2 bot connected.");
+    logger.info({ guildId: config.discord.guildId }, "Discord v3 bot connected.");
     if (captureService.discordAdapter && typeof captureService.discordAdapter.setClient === "function") {
       captureService.discordAdapter.setClient(client);
     }

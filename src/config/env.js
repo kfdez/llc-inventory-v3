@@ -37,7 +37,7 @@ function loadConfig() {
   const legacyDryRun = booleanEnv("DRY_RUN", true);
   const discordEnabled = booleanEnv("DISCORD_ENABLED", !legacyDryRun);
   const appsScriptDryRun = booleanEnv("APPS_SCRIPT_DRY_RUN", legacyDryRun);
-  const sqlitePath = path.resolve(process.cwd(), optionalEnv("SQLITE_PATH", "./data/llc-inventory-v2.sqlite"));
+  const sqlitePath = path.resolve(process.cwd(), optionalEnv("SQLITE_PATH", "./data/llc-inventory-v3.sqlite"));
   const collectrProxyEnabled = booleanEnv("COLLECTR_PROXY_ENABLED", false);
   const collectrRelayBaseUrl = optionalEnv("COLLECTR_RELAY_BASE_URL");
 
