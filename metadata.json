@@ -1,6 +1,0 @@
-{
-  "name": "LLC Inventory Scanner PWA",
-  "description": "Installable mobile scanner PWA for inventory lookup, sticker-price updates, cart building, and physical audit scanning.",
-  "requestFramePermissions": ["camera"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

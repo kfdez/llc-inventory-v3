@@ -1,49 +1,26 @@
 {
-  "name": "llc-inventory-gemini",
+  "name": "llc-inventory-v3",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "description": "VPS backend helper for Discord sales capture and Google Sheets inventory sync.",
+  "main": "src/index.cjs",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "node scripts/copy-wasm.js && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit",
+    "start": "node src/index.cjs",
     "test": "node --test",
-    "worker:build": "node scripts/copy-wasm.js && vite build",
-    "deploy": "bun run worker:build && wrangler deploy",
-    "deploy:dry-run": "bun run worker:build && wrangler deploy --dry-run",
-    "bot:start": "node src/index.cjs",
     "db:init": "node src/storage/initDb.js",
     "demo:capture": "node src/dev/demoCapture.js",
     "demo:analyze": "node src/dev/analyzeImage.js",
     "collectr:relay": "node src/collectr/localRelay.js"
   },
-  "dependencies": {
-    "@google/genai": "^2.4.0",
-    "@tailwindcss/vite": "^4.1.14",
-    "@vitejs/plugin-react": "^5.0.4",
-    "dotenv": "^17.2.3",
-    "discord.js": "^14.26.3",
-    "express": "^4.21.2",
-    "jsqr": "^1.4.0",
-    "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
-    "pino": "^9.7.0",
-    "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "sharp": "^0.35.3",
-    "vite": "^6.2.3",
-    "zxing-wasm": "^3.1.2"
+  "engines": {
+    "node": ">=22.17.0"
   },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
-    "tailwindcss": "^4.1.14",
-    "tsx": "^4.21.0",
-    "typescript": "~5.8.2",
-    "@types/express": "^4.17.21",
-    "wrangler": "^4.0.0"
+  "dependencies": {
+    "discord.js": "^14.26.3",
+    "dotenv": "^17.2.3",
+    "jsqr": "^1.4.0",
+    "pino": "^9.7.0",
+    "sharp": "^0.35.3",
+    "zxing-wasm": "^3.1.2"
   }
 }
