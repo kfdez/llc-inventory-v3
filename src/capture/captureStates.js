@@ -6,12 +6,12 @@ const CAPTURE_STATES = {
   ACTIVE: "active",
   STOP_REQUESTED: "stop_requested",
   APPS_SCRIPT_STOPPING: "apps_script_stopping",
+  PAUSED: "paused",
   STOPPED: "stopped",
   FAILED: "failed"
 };
 
 const TERMINAL_STATES = new Set([
-  CAPTURE_STATES.STOPPED,
   CAPTURE_STATES.FAILED
 ]);
 

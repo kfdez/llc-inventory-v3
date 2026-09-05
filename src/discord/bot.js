@@ -83,6 +83,22 @@ function buildCommands() {
     )
     .addSubcommand((subcommand) =>
       subcommand
+        .setName("resume")
+        .setDescription("Resume monitoring a previous capture session.")
+        .addStringOption((option) =>
+          option
+            .setName("session_id")
+            .setDescription("Session ID from /capture recent or the original start response.")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("recent")
+        .setDescription("List recent capture sessions.")
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
         .setName("status")
         .setDescription("Show the active capture session and thread status.")
     );
@@ -170,6 +186,41 @@ async function startDiscordBot({ config, logger, captureService }) {
             "Job ID: `" + result.job.id + "`",
             "State: `" + result.session.state + "`"
           ].join("\n"),
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+
+      if (subcommand === "resume") {
+        const session = await captureService.resumeSession({
+          captureSessionId: interaction.options.getString("session_id", true),
+          requestedBy: interaction.user.username || interaction.user.id
+        });
+        await interaction.reply({
+          content: [
+            "Capture resumed.",
+            "Session ID: `" + session.id + "`",
+            "Thread: " + (session.discordThreadId ? "<#" + session.discordThreadId + ">" : "not created"),
+            "Sheet tab: `" + (session.appsScriptSession.sheet_tab_name || "not started") + "`",
+            "State: `" + session.state + "`"
+          ].join("\n"),
+          flags: MessageFlags.Ephemeral
+        });
+        return;
+      }
+
+      if (subcommand === "recent") {
+        const sessions = captureService.listRecentSessions({ limit: 10 });
+        const lines = sessions.length
+          ? sessions.map((session) => [
+              "`" + session.id + "`",
+              session.state,
+              session.discordThreadId ? "<#" + session.discordThreadId + ">" : "no thread",
+              session.appsScriptSession.sheet_tab_name || "no sheet"
+            ].join(" | "))
+          : ["No capture sessions found."];
+        await interaction.reply({
+          content: lines.join("\n"),
           flags: MessageFlags.Ephemeral
         });
         return;
@@ -265,7 +316,7 @@ function getImageExtension(attachment) {
 }
 
 async function withTemporaryImageFile(buffer, extension, callback) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "llc-inventory-v2-image-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "llc-inventory-v3-image-"));
   const filePath = path.join(dir, randomUUID() + extension);
   await fs.writeFile(filePath, buffer);
   try {

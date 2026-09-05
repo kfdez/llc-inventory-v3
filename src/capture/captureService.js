@@ -65,6 +65,46 @@ class CaptureService {
     });
   }
 
+  listRecentSessions({ limit = 10 } = {}) {
+    return this.store.listCaptureSessions({ limit });
+  }
+
+  async resumeSession({ captureSessionId, requestedBy }) {
+    const session = this.store.getCaptureSession(captureSessionId);
+    if (!session) {
+      throw new Error("Capture session not found: " + captureSessionId);
+    }
+    if (!session.discordThreadId) {
+      throw new Error("Capture session has no Discord thread to resume: " + captureSessionId);
+    }
+    if (!session.appsScriptSession || !session.appsScriptSession.session_id) {
+      throw new Error("Capture session has no Apps Script session to resume: " + captureSessionId);
+    }
+
+    const activeSessions = this.store.listCaptureSessions({
+      states: [CAPTURE_STATES.ACTIVE],
+      limit: 100
+    });
+    activeSessions.forEach((activeSession) => {
+      if (activeSession.id !== session.id) {
+        this.store.upsertCaptureSession(transitionCaptureState(activeSession, CAPTURE_STATES.PAUSED));
+      }
+    });
+
+    const appsScriptSession = this.dryRun
+      ? session.appsScriptSession
+      : (await this.appsScriptClient.resumeCaptureSession({
+          sessionId: session.appsScriptSession.session_id,
+          threadId: session.discordThreadId,
+          resumedBy: requestedBy
+        })).session;
+
+    const resumed = transitionCaptureState(session, CAPTURE_STATES.ACTIVE, {
+      appsScriptSession: appsScriptSession || session.appsScriptSession
+    });
+    return this.store.upsertCaptureSession(resumed);
+  }
+
   getStatus() {
     const activeSession = this.store.findLatestCaptureSessionByStates([
       CAPTURE_STATES.ACTIVE,

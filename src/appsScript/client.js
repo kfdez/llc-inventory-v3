@@ -46,6 +46,14 @@ class AppsScriptClient {
     });
   }
 
+  resumeCaptureSession({ sessionId, threadId, resumedBy }) {
+    return this.post("capture/resume", {
+      sessionId,
+      groupId: threadId,
+      resumedBy
+    });
+  }
+
   appendCaptureScans(payload) {
     return this.post("capture/scan", {
       ...payload,

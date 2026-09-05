@@ -72,3 +72,51 @@ test("status returns working session and recent jobs", async () => {
   assert.equal(status.recentJobs.length, 1);
   store.close();
 });
+
+test("resume stopped session makes it active again and pauses other active sessions", async () => {
+  const { store, service } = createService();
+  service.dryRun = false;
+  service.appsScriptClient = {
+    async resumeCaptureSession({ sessionId }) {
+      assert.equal(sessionId, "sheet-1");
+      return {
+        session: {
+          session_id: "sheet-1",
+          sheet_tab_name: "Sales Log - Previous"
+        }
+      };
+    }
+  };
+
+  store.upsertCaptureSession({
+    id: "old-local",
+    state: CAPTURE_STATES.STOPPED,
+    requestedName: "Previous",
+    discordThreadId: "thread-old",
+    discordThreadName: "Previous Thread",
+    appsScriptSession: {
+      session_id: "sheet-1",
+      sheet_tab_name: "Sales Log - Previous"
+    }
+  });
+  store.upsertCaptureSession({
+    id: "current-local",
+    state: CAPTURE_STATES.ACTIVE,
+    requestedName: "Current",
+    discordThreadId: "thread-current",
+    discordThreadName: "Current Thread",
+    appsScriptSession: {
+      session_id: "sheet-2",
+      sheet_tab_name: "Sales Log - Current"
+    }
+  });
+
+  const resumed = await service.resumeSession({
+    captureSessionId: "old-local",
+    requestedBy: "Tester"
+  });
+
+  assert.equal(resumed.state, CAPTURE_STATES.ACTIVE);
+  assert.equal(store.getCaptureSession("current-local").state, CAPTURE_STATES.PAUSED);
+  store.close();
+});
