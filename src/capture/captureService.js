@@ -77,10 +77,6 @@ class CaptureService {
     if (!session.discordThreadId) {
       throw new Error("Capture session has no Discord thread to resume: " + captureSessionId);
     }
-    if (!session.appsScriptSession || !session.appsScriptSession.session_id) {
-      throw new Error("Capture session has no Apps Script session to resume: " + captureSessionId);
-    }
-
     const activeSessions = this.store.listCaptureSessions({
       states: [CAPTURE_STATES.ACTIVE],
       limit: 100
@@ -91,13 +87,28 @@ class CaptureService {
       }
     });
 
-    const appsScriptSession = this.dryRun
-      ? session.appsScriptSession
-      : (await this.appsScriptClient.resumeCaptureSession({
-          sessionId: session.appsScriptSession.session_id,
-          threadId: session.discordThreadId,
-          resumedBy: requestedBy
-        })).session;
+    let appsScriptSession = session.appsScriptSession || {};
+    if (this.dryRun) {
+      appsScriptSession = appsScriptSession.session_id
+        ? appsScriptSession
+        : {
+            session_id: session.id,
+            session_name: session.requestedName || session.discordThreadName || "Dry run",
+            sheet_tab_name: "DRY RUN"
+          };
+    } else if (appsScriptSession.session_id) {
+      appsScriptSession = (await this.appsScriptClient.resumeCaptureSession({
+        sessionId: appsScriptSession.session_id,
+        threadId: session.discordThreadId,
+        resumedBy: requestedBy
+      })).session;
+    } else {
+      appsScriptSession = (await this.appsScriptClient.startCaptureSession({
+        threadId: session.discordThreadId,
+        sessionName: session.requestedName || session.discordThreadName || "Recovered capture",
+        startedBy: requestedBy
+      })).session;
+    }
 
     const resumed = transitionCaptureState(session, CAPTURE_STATES.ACTIVE, {
       appsScriptSession: appsScriptSession || session.appsScriptSession

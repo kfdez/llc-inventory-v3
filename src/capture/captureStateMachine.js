@@ -43,7 +43,9 @@ const ALLOWED_TRANSITIONS = {
     CAPTURE_STATES.ACTIVE,
     CAPTURE_STATES.FAILED
   ],
-  [CAPTURE_STATES.FAILED]: []
+  [CAPTURE_STATES.FAILED]: [
+    CAPTURE_STATES.ACTIVE
+  ],
 };
 
 function canTransition(fromState, toState) {

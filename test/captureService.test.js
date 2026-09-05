@@ -120,3 +120,38 @@ test("resume stopped session makes it active again and pauses other active sessi
   assert.equal(store.getCaptureSession("current-local").state, CAPTURE_STATES.PAUSED);
   store.close();
 });
+
+test("resume failed start creates missing Apps Script session for existing thread", async () => {
+  const { store, service } = createService();
+  service.dryRun = false;
+  service.appsScriptClient = {
+    async startCaptureSession({ threadId, sessionName }) {
+      assert.equal(threadId, "thread-failed");
+      assert.equal(sessionName, "Failed Start");
+      return {
+        session: {
+          session_id: "sheet-recovered",
+          sheet_tab_name: "Sales Log - Recovered"
+        }
+      };
+    }
+  };
+
+  store.upsertCaptureSession({
+    id: "failed-local",
+    state: CAPTURE_STATES.FAILED,
+    requestedName: "Failed Start",
+    discordThreadId: "thread-failed",
+    discordThreadName: "Failed Thread",
+    appsScriptSession: {}
+  });
+
+  const resumed = await service.resumeSession({
+    captureSessionId: "failed-local",
+    requestedBy: "Tester"
+  });
+
+  assert.equal(resumed.state, CAPTURE_STATES.ACTIVE);
+  assert.equal(resumed.appsScriptSession.session_id, "sheet-recovered");
+  store.close();
+});

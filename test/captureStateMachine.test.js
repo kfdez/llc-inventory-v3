@@ -24,6 +24,10 @@ test("allows stopped sessions to resume", () => {
   assert.doesNotThrow(() => assertTransition(CAPTURE_STATES.STOPPED, CAPTURE_STATES.ACTIVE));
 });
 
+test("allows failed sessions to recover", () => {
+  assert.doesNotThrow(() => assertTransition(CAPTURE_STATES.FAILED, CAPTURE_STATES.ACTIVE));
+});
+
 test("transitionCaptureState applies patch and next state", () => {
   const session = {
     id: "session-1",

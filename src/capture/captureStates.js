@@ -11,9 +11,7 @@ const CAPTURE_STATES = {
   FAILED: "failed"
 };
 
-const TERMINAL_STATES = new Set([
-  CAPTURE_STATES.FAILED
-]);
+const TERMINAL_STATES = new Set();
 
 module.exports = {
   CAPTURE_STATES,
