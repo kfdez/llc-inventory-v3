@@ -69,6 +69,21 @@ class CaptureService {
     return this.store.listCaptureSessions({ limit });
   }
 
+  getSession(captureSessionId) {
+    return this.store.getCaptureSession(captureSessionId);
+  }
+
+  async ensureSessionReadyForCapture({ captureSessionId, requestedBy }) {
+    const session = this.store.getCaptureSession(captureSessionId);
+    if (!session) {
+      throw new Error("Capture session not found: " + captureSessionId);
+    }
+    if (session.appsScriptSession && session.appsScriptSession.session_id) {
+      return session;
+    }
+    return this.resumeSession({ captureSessionId, requestedBy });
+  }
+
   async resumeSession({ captureSessionId, requestedBy }) {
     const session = this.store.getCaptureSession(captureSessionId);
     if (!session) {

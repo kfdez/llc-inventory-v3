@@ -99,6 +99,25 @@ function buildCommands() {
     )
     .addSubcommand((subcommand) =>
       subcommand
+        .setName("recapture")
+        .setDescription("Reprocess recent image messages from a capture thread.")
+        .addStringOption((option) =>
+          option
+            .setName("session_id")
+            .setDescription("Session ID from /capture recent or the original start response.")
+            .setRequired(true)
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName("limit")
+            .setDescription("Maximum recent messages to scan. Default 100, max 500.")
+            .setRequired(false)
+            .setMinValue(1)
+            .setMaxValue(500)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
         .setName("status")
         .setDescription("Show the active capture session and thread status.")
     );
@@ -226,6 +245,37 @@ async function startDiscordBot({ config, logger, captureService }) {
         return;
       }
 
+      if (subcommand === "recapture") {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+        const sessionId = interaction.options.getString("session_id", true);
+        const limit = interaction.options.getInteger("limit", false) || 100;
+        const session = await captureService.ensureSessionReadyForCapture({
+          captureSessionId: sessionId,
+          requestedBy: interaction.user.username || interaction.user.id
+        });
+        const result = await recaptureThreadMessages({
+          client,
+          session,
+          captureService,
+          imageAnalysisService,
+          imageUploadConfig: config.imageUpload,
+          logger,
+          limit
+        });
+        await interaction.editReply({
+          content: [
+            "Recapture complete.",
+            "Session ID: `" + session.id + "`",
+            "Thread: <#" + session.discordThreadId + ">",
+            "Messages scanned: `" + result.scannedMessages + "`",
+            "Image messages processed: `" + result.processedMessages + "`",
+            "Rows written/updated: `" + result.wroteRows + "`",
+            result.failedMessages ? "Failed messages: `" + result.failedMessages + "`" : ""
+          ].filter(Boolean).join("\n")
+        });
+        return;
+      }
+
       if (subcommand === "status") {
         const status = captureService.getStatus();
         const session = status.activeSession;
@@ -326,12 +376,19 @@ async function withTemporaryImageFile(buffer, extension, callback) {
   }
 }
 
-async function handleCaptureThreadMessage({ message, captureService, imageAnalysisService, imageUploadConfig = {}, logger }) {
+async function handleCaptureThreadMessage({
+  message,
+  captureService,
+  imageAnalysisService,
+  imageUploadConfig = {},
+  logger,
+  sessionOverride = null
+}) {
   if (!message || !message.channelId || (message.author && message.author.bot)) {
     return false;
   }
 
-  const session = captureService.getActiveSessionForThread(message.channelId);
+  const session = sessionOverride || captureService.getActiveSessionForThread(message.channelId);
   if (!session) {
     return false;
   }
@@ -413,11 +470,203 @@ async function handleCaptureThreadMessage({ message, captureService, imageAnalys
   return true;
 }
 
+async function processCaptureThreadMessage({
+  message,
+  captureService,
+  imageAnalysisService,
+  imageUploadConfig = {},
+  logger,
+  sessionOverride = null
+}) {
+  const handled = await handleCaptureThreadMessage({
+    message,
+    captureService,
+    imageAnalysisService,
+    imageUploadConfig,
+    logger,
+    sessionOverride
+  });
+  return { handled };
+}
+
+async function fetchRecentMessages(channel, limit) {
+  const boundedLimit = Math.max(1, Math.min(Number(limit || 100), 500));
+  const output = [];
+  let before;
+
+  while (output.length < boundedLimit) {
+    const batchSize = Math.min(100, boundedLimit - output.length);
+    const batch = await channel.messages.fetch({
+      limit: batchSize,
+      ...(before ? { before } : {})
+    });
+    if (!batch.size) {
+      break;
+    }
+    const messages = Array.from(batch.values());
+    output.push(...messages);
+    before = messages[messages.length - 1].id;
+    if (batch.size < batchSize) {
+      break;
+    }
+  }
+
+  return output.sort((a, b) => Number(a.createdTimestamp || 0) - Number(b.createdTimestamp || 0));
+}
+
+async function recaptureThreadMessages({
+  client,
+  session,
+  captureService,
+  imageAnalysisService,
+  imageUploadConfig = {},
+  logger,
+  limit = 100
+}) {
+  if (!session || !session.discordThreadId) {
+    throw new Error("Capture session has no Discord thread to recapture.");
+  }
+  if (!session.appsScriptSession || !session.appsScriptSession.session_id) {
+    throw new Error("Capture session has no Apps Script session to write to.");
+  }
+
+  const channel = await client.channels.fetch(session.discordThreadId);
+  if (!channel || !channel.messages || typeof channel.messages.fetch !== "function") {
+    throw new Error("Capture thread is not fetchable: " + session.discordThreadId);
+  }
+
+  const messages = await fetchRecentMessages(channel, limit);
+  let processedMessages = 0;
+  let failedMessages = 0;
+  let wroteRows = 0;
+
+  for (const message of messages) {
+    const imageAttachments = message.attachments
+      ? Array.from(message.attachments.values()).filter(isImageAttachment)
+      : [];
+    if (!imageAttachments.length || (message.author && message.author.bot)) {
+      continue;
+    }
+
+    try {
+      const result = await processRecaptureMessage({
+        message,
+        session,
+        captureService,
+        imageAnalysisService,
+        imageUploadConfig,
+        logger
+      });
+      if (result.processed) {
+        processedMessages += 1;
+        wroteRows += result.wroteRows;
+      }
+    } catch (error) {
+      failedMessages += 1;
+      logger.error({ err: error, messageId: message.id }, "Recapture message failed.");
+    }
+  }
+
+  return {
+    scannedMessages: messages.length,
+    processedMessages,
+    failedMessages,
+    wroteRows
+  };
+}
+
+async function processRecaptureMessage({
+  message,
+  session,
+  captureService,
+  imageAnalysisService,
+  imageUploadConfig = {},
+  logger
+}) {
+  const imageAttachments = message.attachments
+    ? Array.from(message.attachments.values()).filter(isImageAttachment)
+    : [];
+  if (!imageAttachments.length || (message.author && message.author.bot)) {
+    return { processed: false, wroteRows: 0 };
+  }
+
+  await message.react(STATUS_REACTIONS.pending).catch(() => {});
+  let totalQrCount = 0;
+  let wroteRows = 0;
+
+  for (const [attachmentIndex, attachment] of imageAttachments.entries()) {
+    const buffer = await downloadBuffer(attachment.proxyURL || attachment.url, attachment.url);
+    let imageUrl = "";
+    let imageUploadError = "";
+    try {
+      const uploadName = buildUploadName(
+        imageAttachments.length > 1 ? message.id + "-" + attachmentIndex : message.id,
+        new Date(message.createdTimestamp || Date.now())
+      );
+      const upload = await uploadBufferToImgbb(buffer, imageUploadConfig.imgbbApiKey, uploadName);
+      imageUrl = upload.url || "";
+      imageUploadError = upload.error || "";
+    } catch (error) {
+      imageUploadError = "imgbb: " + error.message;
+    }
+
+    const analysis = await withTemporaryImageFile(buffer, getImageExtension(attachment), (imagePath) =>
+      imageAnalysisService.analyzeBuffer(buffer, { imagePath })
+    );
+    const scans = buildCaptureScans({
+      qrValues: analysis.qrValues,
+      messageId: message.id,
+      attachmentIndex,
+      analysis
+    });
+    totalQrCount += analysis.qrValues.length;
+
+    const result = await captureService.appsScriptClient.appendCaptureScans({
+      sessionId: session.appsScriptSession.session_id,
+      threadId: session.discordThreadId,
+      senderId: message.author ? message.author.id : "",
+      senderName: message.author ? message.author.username : "",
+      messageId: imageAttachments.length > 1 ? message.id + ":" + attachmentIndex : message.id,
+      imageFileName: attachment.name || "",
+      imageUrl,
+      caption: message.content || "",
+      sourceTimestampMs: message.createdTimestamp || Date.now(),
+      scans: imageUploadError
+        ? scans.map((scan) => ({
+            ...scan,
+            parseError: [scan.parseError, imageUploadError].filter(Boolean).join(" | ")
+          }))
+        : scans
+    });
+    wroteRows += Number(result.result && result.result.appended || 0) + Number(result.result && result.result.updated || 0);
+  }
+
+  await removeBotReaction(message, STATUS_REACTIONS.pending);
+  if (totalQrCount > 0) {
+    await message.react(STATUS_REACTIONS.success).catch(() => {});
+    await message.react(getCountReaction(totalQrCount)).catch(() => {});
+  } else {
+    await message.react(STATUS_REACTIONS.warning).catch(() => {});
+  }
+  logger.info({
+    messageId: message.id,
+    threadId: message.channelId,
+    totalQrCount,
+    wroteRows,
+    recapture: true
+  }, "Recaptured capture image message.");
+  return { processed: true, wroteRows };
+}
+
 module.exports = {
   startDiscordBot,
   buildCommands,
   replaceGuildCommands,
   handleCaptureThreadMessage,
+  processCaptureThreadMessage,
+  processRecaptureMessage,
+  recaptureThreadMessages,
+  fetchRecentMessages,
   isImageAttachment,
   getCountReaction
 };
