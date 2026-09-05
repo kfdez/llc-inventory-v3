@@ -112,11 +112,26 @@ class CaptureService {
             sheet_tab_name: "DRY RUN"
           };
     } else if (appsScriptSession.session_id) {
-      appsScriptSession = (await this.appsScriptClient.resumeCaptureSession({
-        sessionId: appsScriptSession.session_id,
-        threadId: session.discordThreadId,
-        resumedBy: requestedBy
-      })).session;
+      try {
+        appsScriptSession = (await this.appsScriptClient.resumeCaptureSession({
+          sessionId: appsScriptSession.session_id,
+          threadId: session.discordThreadId,
+          resumedBy: requestedBy
+        })).session;
+      } catch (error) {
+        if (this.logger && typeof this.logger.warn === "function") {
+          this.logger.warn({
+            err: error,
+            captureSessionId,
+            appsScriptSessionId: appsScriptSession.session_id
+          }, "Apps Script resume failed; creating capture sheet again.");
+        }
+        appsScriptSession = (await this.appsScriptClient.startCaptureSession({
+          threadId: session.discordThreadId,
+          sessionName: session.requestedName || session.discordThreadName || "Recovered capture",
+          startedBy: requestedBy
+        })).session;
+      }
     } else {
       appsScriptSession = (await this.appsScriptClient.startCaptureSession({
         threadId: session.discordThreadId,

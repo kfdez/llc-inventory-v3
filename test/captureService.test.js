@@ -155,3 +155,49 @@ test("resume failed start creates missing Apps Script session for existing threa
   assert.equal(resumed.appsScriptSession.session_id, "sheet-recovered");
   store.close();
 });
+
+test("resume creates Apps Script session again when saved sheet session cannot resume", async () => {
+  const { store, service } = createService();
+  service.dryRun = false;
+  const calls = [];
+  service.appsScriptClient = {
+    async resumeCaptureSession({ sessionId, threadId }) {
+      calls.push(["resume", sessionId, threadId]);
+      throw new Error("Capture session not found.");
+    },
+    async startCaptureSession({ threadId, sessionName }) {
+      calls.push(["start", threadId, sessionName]);
+      return {
+        session: {
+          session_id: "sheet-recreated",
+          sheet_tab_name: "Sales Log - Recreated"
+        }
+      };
+    }
+  };
+
+  store.upsertCaptureSession({
+    id: "local-with-stale-sheet",
+    state: CAPTURE_STATES.STOPPED,
+    requestedName: "Stale Sheet",
+    discordThreadId: "thread-stale",
+    discordThreadName: "Stale Thread",
+    appsScriptSession: {
+      session_id: "missing-sheet-session",
+      sheet_tab_name: "Missing Sheet"
+    }
+  });
+
+  const resumed = await service.resumeSession({
+    captureSessionId: "local-with-stale-sheet",
+    requestedBy: "Tester"
+  });
+
+  assert.equal(resumed.state, CAPTURE_STATES.ACTIVE);
+  assert.equal(resumed.appsScriptSession.session_id, "sheet-recreated");
+  assert.deepEqual(calls, [
+    ["resume", "missing-sheet-session", "thread-stale"],
+    ["start", "thread-stale", "Stale Sheet"]
+  ]);
+  store.close();
+});
