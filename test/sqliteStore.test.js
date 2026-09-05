@@ -6,7 +6,7 @@ const path = require("node:path");
 const { SqliteStore } = require("../src/storage/sqliteStore");
 
 function createStore() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llc-inventory-v2-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llc-inventory-v3-"));
   return new SqliteStore(path.join(dir, "test.sqlite"));
 }
 

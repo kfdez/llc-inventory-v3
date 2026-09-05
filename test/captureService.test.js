@@ -8,7 +8,7 @@ const { CaptureService } = require("../src/capture/captureService");
 const { CAPTURE_STATES } = require("../src/capture/captureStates");
 
 function createService() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llc-inventory-v2-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llc-inventory-v3-"));
   const store = new SqliteStore(path.join(dir, "test.sqlite"));
   const service = new CaptureService({
     store,

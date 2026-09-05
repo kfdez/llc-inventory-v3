@@ -67,7 +67,7 @@ function loadConfig() {
     },
     imageAnalysis: {
       labelDetectionEnabled: booleanEnv("LABEL_DETECTION_ENABLED", false),
-      detectorProjectDir: path.resolve(process.cwd(), optionalEnv("LABEL_DETECTOR_PROJECT_DIR", "../llc-inventory/label-detector")),
+      detectorProjectDir: path.resolve(process.cwd(), optionalEnv("LABEL_DETECTOR_PROJECT_DIR", "./label-detector")),
       detectorPython: resolveOptionalPath(optionalEnv("LABEL_DETECTOR_PYTHON")) || "python",
       detectorWeightsPath: resolveOptionalPath(optionalEnv("LABEL_DETECTOR_WEIGHTS_PATH")),
       detectorDevice: optionalEnv("LABEL_DETECTOR_DEVICE", "cpu"),

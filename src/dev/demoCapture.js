@@ -7,7 +7,7 @@ const { CaptureService } = require("../capture/captureService");
 const { DryRunDiscordAdapter } = require("../discord/adapter");
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llc-inventory-v2-demo-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "llc-inventory-v3-demo-"));
   const store = new SqliteStore(path.join(dir, "demo.sqlite"));
   const logger = pino({ level: "warn" });
   const service = new CaptureService({
