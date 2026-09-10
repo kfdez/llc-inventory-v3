@@ -3,13 +3,6 @@ const sharp = require("sharp");
 const { scanQrCodes } = require("./qrScanner");
 const { detectLabels } = require("./labelDetector");
 
-function addUnique(found, seen, decoded) {
-  if (decoded && !seen[decoded]) {
-    seen[decoded] = true;
-    found.push(decoded);
-  }
-}
-
 class ImageAnalysisService {
   constructor({ config, logger }) {
     this.config = config;
@@ -75,7 +68,6 @@ class ImageAnalysisService {
     });
 
     const found = [];
-    const seen = {};
     for (const detection of detections) {
       const crop = await sharp(buffer)
         .extract({
@@ -87,7 +79,7 @@ class ImageAnalysisService {
         .png()
         .toBuffer();
       const decoded = await scanQrCodes(crop);
-      decoded.forEach((value) => addUnique(found, seen, value));
+      decoded.filter(Boolean).forEach((value) => found.push(value));
     }
 
     return {

@@ -29,3 +29,20 @@ test("builds no-code scan row when no QR values are found", () => {
   assert.equal(scans[0].parseStatus, "no_code_found");
   assert.equal(scans[0].parseError, "No label detections found");
 });
+
+test("builds distinct rows for duplicate QR payload detections", () => {
+  const scans = buildCaptureScans({
+    qrValues: [
+      "N=Blue-Eyes White Dragon;O=KYL;C=25;G=S",
+      "N=Blue-Eyes White Dragon;O=KYL;C=25;G=S"
+    ],
+    messageId: "message-duplicate",
+    attachmentIndex: 0,
+    analysis: {}
+  });
+
+  assert.equal(scans.length, 2);
+  assert.equal(scans[0].rawValue, scans[1].rawValue);
+  assert.equal(scans[0].recordKey, "discord:message-duplicate:0:1");
+  assert.equal(scans[1].recordKey, "discord:message-duplicate:0:2");
+});

@@ -2,17 +2,6 @@ const sharp = require("sharp");
 const jsQR = require("jsqr");
 const { readBarcodes } = require("zxing-wasm/reader");
 
-function addUnique(found, seen, decoded) {
-  if (decoded && !seen[decoded]) {
-    seen[decoded] = true;
-    found.push(decoded);
-  }
-}
-
-function addUniqueValues(found, seen, decodedValues) {
-  decodedValues.forEach((decoded) => addUnique(found, seen, decoded));
-}
-
 function extractTile(data, width, left, top, tileWidth, tileHeight) {
   const tile = new Uint8ClampedArray(tileWidth * tileHeight * 4);
   for (let y = 0; y < tileHeight; y += 1) {
@@ -53,6 +42,12 @@ function tryDecode(data, width, height) {
   return result ? String(result.data) : null;
 }
 
+function pushDecoded(found, decoded) {
+  if (decoded) {
+    found.push(decoded);
+  }
+}
+
 async function zxingDecode(imageBuffer) {
   const results = await readBarcodes(imageBuffer, {
     formats: ["QRCode"],
@@ -71,9 +66,7 @@ async function zxingDecode(imageBuffer) {
 }
 
 function collectDirectDecodes(data, width, height) {
-  const found = [];
-  const seen = {};
-  addUnique(found, seen, tryDecode(data, width, height));
+  const tileDecodes = [];
 
   [[2, 1], [1, 2], [2, 2]].forEach(([columns, rows]) => {
     const tileWidth = Math.floor(width / columns);
@@ -85,18 +78,22 @@ function collectDirectDecodes(data, width, height) {
         const effectiveWidth = column === columns - 1 ? width - left : tileWidth;
         const effectiveHeight = row === rows - 1 ? height - top : tileHeight;
         const tile = extractTile(data, width, left, top, effectiveWidth, effectiveHeight);
-        addUnique(found, seen, tryDecode(tile, effectiveWidth, effectiveHeight));
+        pushDecoded(tileDecodes, tryDecode(tile, effectiveWidth, effectiveHeight));
       }
     }
   });
 
-  return found;
+  if (tileDecodes.length) {
+    return tileDecodes;
+  }
+
+  const fullImageDecode = tryDecode(data, width, height);
+  return fullImageDecode ? [fullImageDecode] : [];
 }
 
 async function scanQrCodes(imageBuffer) {
   const base = sharp(imageBuffer).rotate();
-  const found = [];
-  const seen = {};
+  let bestZxingValues = [];
 
   const zxingVariants = [
     () => base.clone(),
@@ -106,10 +103,13 @@ async function scanQrCodes(imageBuffer) {
 
   for (const builder of zxingVariants) {
     const buffer = await builder().png().toBuffer();
-    addUniqueValues(found, seen, await zxingDecode(buffer));
-    if (found.length > 1) {
-      return found;
+    const values = await zxingDecode(buffer);
+    if (values.length > bestZxingValues.length) {
+      bestZxingValues = values;
     }
+  }
+  if (bestZxingValues.length) {
+    return bestZxingValues;
   }
 
   const rawVariants = [
@@ -124,11 +124,13 @@ async function scanQrCodes(imageBuffer) {
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    collectDirectDecodes(toRgba(variant.data, variant.info), variant.info.width, variant.info.height)
-      .forEach((decoded) => addUnique(found, seen, decoded));
+    const values = collectDirectDecodes(toRgba(variant.data, variant.info), variant.info.width, variant.info.height);
+    if (values.length) {
+      return values;
+    }
   }
 
-  return found;
+  return [];
 }
 
 module.exports = {
